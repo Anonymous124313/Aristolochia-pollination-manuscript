@@ -1,0 +1,584 @@
+---
+title: "Pollinators_Aristolochia"
+output: html_document
+date: "2024-03-11"
+---
+
+#Packages
+```{r include=FALSE}
+vapply(c("magrittr","stringr", "readr", "scales", "mgcv", "RColorBrewer", "dplyr","ggplot2","car","tidyverse", "lme4", "vegan", "grid","emmeans","ggmap","mvabund","cowplot","ggpubr","ggpattern","lubridate"), library, logical(1L),
+       character.only = TRUE, logical.return = TRUE)
+citation(package = "lme4")
+
+library("remotes")
+#remotes::install_github("coolbutuseless/ggpattern")
+```
+
+#Import data
+```{r}
+#Pollinators
+data.poll.mtp<-read.csv("D2_Data_pollinators.csv",header = T, row.names = NULL,sep = ";")
+
+#Flowers inspected
+data.inspect<-read.csv("D3_Data_sessions_flowers_counted.csv",header = T, row.names = NULL,sep = ";")
+```
+
+#Warning: change "collection_date (yyyy-mm-dd)" by "date"
+
+#Date
+```{r}
+data.poll.mtp$date<-gsub("/","-",data.poll.mtp$date)
+data.poll.mtp$date<-dmy(data.poll.mtp$date)
+str(data.poll.mtp$date)
+
+data.inspect.mtp$date<-gsub("/","-",data.inspect.mtp$date)
+
+#Warning to date format
+data.inspect.mtp$date<-dmy(data.inspect.mtp$date)
+str(data.inspect.mtp$date)
+```
+
+#Pool data on flowers inspected by species x date x station
+```{r}
+data.inspect.mtpM<-aggregate(data.inspect.mtp$nb_flowers_inspected, by=list(data.inspect.mtp$date,data.inspect.mtp$locality_code,data.inspect.mtp$plant_species), FUN=sum)
+colnames(data.inspect.mtpM)<-c("date","locality_code","plant_species","nb_flowers_inspected")
+```
+
+#Extract pollinating species of Aristolochia species
+```{r}
+list.poll <- filter(data.poll.mtp, species != "", plant_species %in% c("Aristolochia rotunda", "Aristolochia pistolochia", "Aristolochia clematitis"), statut=="pollinator") %>% distinct(species) %>% pull(species)
+list.poll<-as.factor(list.poll)
+list.poll<-droplevels(list.poll)
+
+list.poll.rot <- filter(data.poll.mtp, statut == "pollinator", species != "", plant_species %in% c("Aristolochia rotunda")) %>% distinct(species) %>% pull(species)
+list.poll.pis <- filter(data.poll.mtp, statut == "pollinator", species != "", plant_species %in% c("Aristolochia pistolochia")) %>% distinct(species) %>% pull(species)
+list.poll.cle <- filter(data.poll.mtp, statut == "pollinator", species != "", plant_species %in% c("Aristolochia clematitis")) %>% distinct(species) %>% pull(species)
+```
+
+***************************************************************************************************
+*Identity of floral visitors*
+***************************************************************************************************
+
+#Number of flowers occupied
+```{r}
+length(unique(data.poll.mtp$flower_code[data.poll.mtp$plant_species=="Aristolochia rotunda"]))
+length(unique(data.poll.mtp$flower_code[data.poll.mtp$plant_species=="Aristolochia rotunda" & data.poll.mtp$nb_individuals>0]))
+
+length(unique(data.poll.mtp$flower_code[data.poll.mtp$plant_species=="Aristolochia pistolochia"]))
+length(unique(data.poll.mtp$flower_code[data.poll.mtp$plant_species=="Aristolochia pistolochia" & data.poll.mtp$nb_individuals>0]))
+
+length(unique(data.poll.mtp$flower_code[data.poll.mtp$plant_species=="Aristolochia clematitis"]))
+length(unique(data.poll.mtp$flower_code[data.poll.mtp$plant_species=="Aristolochia clematitis" & data.poll.mtp$nb_individuals>0]))
+```
+
+#Pollen carriers
+```{r}
+data.poll.mtp$statut<-as.factor(data.poll.mtp$statut)
+list.porteur <- filter(data.poll.mtp, species != "", plant_species %in% c("Aristolochia rotunda", "Aristolochia pistolochia", "Aristolochia clematitis"), statut %in% c("pollinator","pollen_carrier")) %>% distinct(species) %>% pull(species)
+list.porteur<-as.factor(list.porteur)
+list.porteur<-droplevels(list.porteur)
+
+list.porteur.rot <- filter(data.poll.mtp, statut %in% c("pollinator","pollen carrier"), species != "", plant_species %in% c("Aristolochia rotunda")) %>% distinct(species) %>% pull(species)
+list.porteur.pis <- filter(data.poll.mtp, statut %in% c("pollinator","pollen carrier"), species != "", plant_species %in% c("Aristolochia pistolochia")) %>% distinct(species) %>% pull(species)
+list.porteur.cle <- filter(data.poll.mtp, statut %in% c("pollinator","pollen carrier"), species != "", plant_species %in% c("Aristolochia clematitis")) %>% distinct(species) %>% pull(species)
+```
+
+#Pollinators
+```{r}
+polli<-subset(data.poll.mtp, data.poll.mtp$statut=="pollinators")
+polli[is.na(polli)] <- 0
+Arot<-subset(polli, polli$plant_species=="Aristolochia rotunda")
+Apis<-subset(polli, polli$plant_species=="Aristolochia pistolochia")
+Aclem<-subset(polli, polli$plant_species=="Aristolochia clematitis")
+```
+
+```{r}
+Arotn<-Arot %>% group_by(species) %>% summarise(nb = sum(nb_individuals))
+Apisn<-Apis %>% group_by(species) %>% summarise(nb = sum(nb_individuals))
+Aclemn<-Aclem %>% group_by(species) %>% summarise(nb = sum(nb_individuals))
+
+Arotn$plant<-rep("Aristolochia rotunda", nrow(Arotn))
+Apisn$plant<-rep("Aristolochia pistolochia", nrow(Apisn))
+Aclemn$plant<-rep("Aristolochia clematitis", nrow(Aclemn))
+
+plant<-bind_rows(Arotn,Apisn)
+plant<-bind_rows(plant,Aclemn)
+b<-select(polli,family,genus,species)
+b<-unique(b)
+plant2<-left_join(b,plant,by="species")
+
+plant2<-tibble(plant2)
+```
+
+```{r}
+data.poll.male<-subset(data.poll.mtp, statut=="pollinator" & sex=="M")
+```
+
+#Visits of pollinating species
+```{r}
+insectf<-filter(data.poll.mtp, sex %in% c("F"))
+insectm<-filter(data.poll.mtp, sex %in% c("M"))
+
+#A.rotunda
+Rotundan<-subset(insectf,insectf$plant_species=="Aristolochia rotunda")
+rot<- Rotundan %>% group_by(species) %>% summarise (sum(nb_individuals))
+rot$plant<-rep("Aristolochia rotunda",nrow(rot))
+
+#A.pistolochia
+Pistolochian<-subset(insectf,insectf$plant_species=="Aristolochia pistolochia")
+pis<- Pistolochian %>% group_by(species) %>% summarise (sum(nb_individuals))
+pis$plant<-rep("Aristolochia pistolochia",nrow(pis))
+
+#A.clematitis
+Clematitisn<-subset(insectf,insectf$plant_species=="Aristolochia clematitis")
+clem<- Clematitisn %>% group_by(species) %>% summarise (sum(nb_individuals))
+clem$plant<-rep("Aristolochia clematitis",nrow(clem))
+
+Tabvisit<-bind_rows(rot,pis)
+Tabvisit<-bind_rows(Tabvisit,clem)
+Tabvisit
+
+Tabvisit<-tibble(Tabvisit)
+```
+
+#Pollen load for each species
+
+>Warning: verify if there is pollen on different individuals/species on the same flower to avoid counting twice pollen deposited on stigma
+
+#A. clematitis
+```{r}
+Aclem2<-aggregate(Aclem$nb_pollen_insect, by=list(Aclem$species, Aclem$flower_code,Aclem$nb_pollen_stigmate, Aclem$nb_individuals), sum)
+colnames(Aclem2)<-c("species","flower_code","nb_pollen_stigmate","nb_individuals","nb_pollen_insect")
+Aclem2$pollen<-(Aclem2$nb_pollen_stigmate+Aclem2$nb_pollen_insect)
+tapply(Aclem2$pollen, Aclem2$species, sum)
+```
+
+#A. pistolochia
+```{r}
+Apis2<-aggregate(Apis$nb_pollen_insect, by=list(Apis$species, Apis$flower_code,Apis$nb_pollen_stigmate, Apis$nb_individuals), sum)
+colnames(Apis2)<-c("species","flower_code","nb_pollen_stigmate","nb_individuals","nb_pollen_insect")
+Apis2$pollen<-(Apis2$nb_pollen_stigmate+Apis2$nb_pollen_insect)
+tapply(Apis2$pollen, Apis2$species, sum)
+```
+
+#A. rotunda
+```{r}
+Arot2<-aggregate(Arot$nb_pollen_insect, by=list(Arot$species, Arot$flower_code,Arot$nb_pollen_stigmate, Arot$nb_individuals), sum)
+colnames(Arot2)<-c("species","flower_code","nb_pollen_stigmate","nb_individuals","nb_pollen_insect")
+Arot2$pollen<-(Arot2$nb_pollen_stigmate+Arot2$nb_pollen_insect)
+tapply(Arot2$pollen, Arot2$species, sum)
+```
+
+
+*Binomials tests for sex-ratio*
+
+>Example for one species
+
+```{r}
+Faris<-c(9,0)
+binom.test(Faris,p=0.5,alternative="greater",conf.level=0.95) #pvalue=2.23e-13 ***
+```
+
+#Number of males for each pollinator species in each Aristolochia species
+```{r}
+#clematitis
+MaleClem<-subset(Clematitisn, Clematitisn$sex=="M")
+MaleClem<-aggregate(MaleClem$n_individuals, by=list(MaleClem$species), sum)
+ 
+#pistolochia
+MalePis<-subset(Pistolochian, Pistolochian$sex=="M")
+MalePis<-aggregate(MalePis$nb_individuals, by=list(MalePis$species), sum)
+
+#rotunda
+MaleRot<-subset(Rotundan, Rotundan$sex=="M")
+MaleRot<-aggregate(MaleRot$nb_individuals, by=list(MaleRot$species), sum)
+```
+
+********************************************************************************
+*Factors of variation in pollinator communities*
+********************************************************************************
+
+*Abundance matrix of pollinating species of the three Aristolochia species*
+This matrix is formatted as 'vegan' (rows = flowers, columns = pollinators) and contains all the pollinating species (not separated by species of Aristolochia)
+
+```{r}
+data.poll.sstr <- filter(flower_code != "") %>% 
+  select(flower_code, species, nb_individuals) %>% arrange(flower_code) %>% #
+  pivot_wider(names_from = species, values_from = nb_individuals, values_fill = 0, values_fn = sum) %>% 
+  left_join(select(data.poll.mtp, date, year, month, locality_code,latitude, longitude, plant_species, flower_code), by="flower_code") %>%
+  distinct(flower_code, .keep_all = TRUE)
+data.poll.sstr<-droplevels(data.poll.sstr)
+```
+
+*Pollinator communities with pooled data by station x date x plante_species*
+
+```{r}
+library(dplyr)
+#TOUT
+data.poll.station.date <- filter(data.poll.mtp, species %in% list.poll) %>% group_by(date, locality_code, plant_species, species) %>% summarise(n=sum(nb_individuals)) %>% ungroup() %>% pivot_wider(names_from = species, values_from = n, values_fill = 0, values_fn = sum) %>%
+  left_join(select(data.poll.mtp, date, year, month, locality_code, plant_species), by=c("date", "locality_code", "plant_species")) %>%
+  distinct(date, locality_code, plant_species, .keep_all = TRUE) 
+```
+
+*Models manyGLM*
+```{r}
+library("mvabund")
+# Multivariate glm
+data.poll.station.date.DV <- mvabund(select(data.poll.station.date, all_of(list.poll))) 
+
+glm.poll <- manyglm(data.poll.station.date.DV~plant_species+locality_code+month, data=data.poll.station.date, family="negative_binomial")
+```
+
+```{r}
+sum.glm.poll<-summary.manyglm(glm.poll,resamp="residual",show.time="total")
+sum.glm.poll
+
+ano.glm.poll<-anova.manyglm(glm.poll,show.time="total")
+ano.glm.poll
+```
+
+```{r}
+#Test residuals
+library(mvabund)
+library(DHARMa)
+residuals(glm.poll)
+plot(glm.poll)
+plot(glm.poll, which=1)
+plot(glm.poll, which=2)
+plot(glm.poll, which=3)
+
+simulateResiduals(glm.poll, refit=T)
+testZeroInflation(simulateResiduals(glm.poll, refit=T))
+```
+
+*Supplementary figure geographical effect*
+```{r}
+data_subset<-select(data.poll.mtp,species,nb_individuals,date,locality_code,plant_species)
+data_subset<-filter(data_subset, species %in% list.poll)
+data_subset<-tibble(data_subset)
+
+data_subset2<- aggregate(data_subset$nb_individuals, by=list(data_subset$species,data_subset$locality_code,data_subset$plant_species), FUN=sum)
+colnames(data_subset2)<-c("species","locality_code","plant_species","nb_individuals")
+
+data_subset3<-filter(data_subset2, species %in% c("Tricimba cincta", "Tricimba humeralis", "Chloropidae spChloro12","Conioscinella cf mimula", "Hapleginella laevifrons","Polyodaspis ruficornis"))
+library(Hmisc)
+data_subset2<- filter(data_subset2, species %nin% c("Tricimba cincta", "Tricimba humeralis", "Chloropidae spChloro12","Conioscinella cf mimula", "Hapleginella laevifrons","Polyodaspis ruficornis"))
+data_subset3<-aggregate(data_subset3$nb_individuals, by=list(data_subset3$locality_code,data_subset3$plant_species), sum)
+data_subset3$species<-rep("Other Cloropidae species", nrow(data_subset3))
+colnames(data_subset3)<-c("locality_code","plant_species","nb_individuals","species")
+
+data_subset4<-union(data_subset2,data_subset3)
+```
+
+```{r}
+data.inspect.subset2<-select(data.inspect.mtpM,locality_code,plant_species, nb_flowers_inspected)
+data.inspect.subset2<- aggregate(data.inspect.subset2$nb_flowers_inspected, by=list(data.inspect.subset2$locality_code,data.inspect.subset2$plant_species), FUN=sum)
+colnames(data.inspect.subset2)<-c("locality_code","plant_species","nb_flowers_inspected")
+
+data_freq_mtp<-inner_join(data_subset4,data.inspect.subset2, by=c("locality_code","plant_species"))
+data_freq_mtp$prob<-data_freq_mtp$nb_individuals/data_freq_mtp$nb_flowers_inspected
+```
+
+```{r}
+library(dplyr)
+library(ggplot2)
+factors <- c("ML1", "SG3","SJC1","ES1","MA1","ME1","SA1","VA1","BR1","BR2","PU2","SG1","VF2","VL1","PO1","LAM1","SG11","MU1","PU1","SG2","SG5")
+
+data_freq_mtp$species <- factor(data_freq_mtp$species, levels = c("Dasyhelea punctiventris","Dasyhelea turficola","Forcipomyia alacris", "Forcipomyia aristolochiae","Forcipomyia knockensis","Forcipomyia monilicornis","Forcipomyia psilonota","Forcipomyia spCerato10","Trachysiphonella ruficeps","Other Cloropidae species"))
+
+data_freq_mtp %>% filter(nb_flowers_inspected >100)  %>%
+ ggplot() +
+ aes(x = locality_code, y = prob, fill = species) +
+ geom_col() + scale_y_continuous(trans = "log1p") +
+ theme(axis.text.y = element_text(face = "bold"), axis.text.x = element_text(face = "bold", angle = 13L),axis.title.x = element_text(size = 14, face = "bold"), axis.title.y = element_text(size = 14, face = "bold")) +
+ scale_fill_manual(values= c("#C0CA33","#336666","#FFFF00","#FFCC00","#FF6600","#FF3399","#990099","#9900FF","#3399FF","#009")) +
+ labs(x = "Station", y = "Pollinating species/flower") + geom_text(aes(label = nb_flowers_inspected),position = position_stack(vjust = 0.5))+
+ facet_wrap(vars(plant_species),scales = "free_y", ncol = 1L) + theme_light() + scale_x_discrete(limits = factors)
+```
+
+*Supplementary figure temporal effect*
+**Pollinators collected**
+```{r}
+library(dplyr)
+library(ggplot2)
+library(lubridate)
+
+temporal<-filter(data.poll.mtp, species %in% list.poll)
+temporalbis<-temporal
+year(temporal$date)<-2021 #only for figure display
+temporal<-filter(temporal, temporal$flower_code!="")
+temporal2<-aggregate(temporal$nb_individuals, by=list(temporal$species,temporal$date, temporal$plant_species), sum)
+colnames(temporal2)<-c("species","date","plant_species","nb_individuals")
+
+temporalp<-filter(temporal2, species %in% c("Tricimba cincta", "Tricimba humeralis", "Chloropidae spChloro12","Conioscinella cf mimula", "Hapleginella laevifrons","Polyodaspis ruficornis"))
+library(Hmisc)
+temporal2<- filter(temporal2, species %nin% c("Tricimba cincta", "Tricimba humeralis", "Chloropidae spChloro12","Conioscinella cf mimula", "Hapleginella laevifrons","Polyodaspis ruficornis"))
+temporalp<-aggregate(temporalp$nb_individuals, by=list(temporalp$date,temporalp$plant_species), sum)
+temporalp$species<-rep("Other Cloropidae species", nrow(temporalp))
+colnames(temporalp)<-c("date","plant_species","nb_individuals","species")
+
+temporal2p<-union(temporal2,temporalp)
+
+temporal3<-aggregate(temporal$nb_individuals, by=list(temporal$date, temporal$plant_species), sum)
+colnames(temporal3)<-c("date","plant_species","total")
+temporal4<-full_join(temporal2p,temporal3, by=c("date","plant_species"))
+temporal4$freq<-temporal4$nb_individuals/temporal4$total
+```
+
+```{r}
+library(ggplot2)
+library(ggbreak)
+
+temporal4$species <- factor(temporal4$species, levels = c("Dasyhelea punctiventris","Dasyhelea turficola","Forcipomyia alacris", "Forcipomyia aristolochiae","Forcipomyia knockensis","Forcipomyia monilicornis","Forcipomyia psilonota","Forcipomyia spCerato10","Trachysiphonella ruficeps","Other Cloropidae species"))
+
+temporal4 %>% filter(date >= "2021-01-01" & date <= "2021-11-01") %>%
+ggplot () +
+ aes(x = date, y = freq, fill = species) +
+ geom_bar(stat = "summary", fun = "sum") +
+ scale_fill_manual(values= c("#C0CA33","#336666","#FFFF00","#FFCC00","#FF6600","#FF3399","#990099","#9900FF","#3399FF","#009"))+ scale_x_break(c("2021-06-20", "2021-09-20")) + theme(axis.text.x = element_text(face = "bold", size = 7L)) + scale_x_date(date_labels = "%B") +  labs(x = "Season", y = "Frequence of pollinating species") + facet_wrap(vars(plant_species),scales = "free_y" ,nrow = 3L)+ theme_light()
+```
+
+**Number of flowers inspected**
+```{r}
+library(ggplot2)
+
+temporalcount<-data.inspect.mtpM
+temporalbiscount<-temporalcount
+year(temporalcount$date)<-2021 #only for figure display
+```
+
+```{r}
+temporalcount %>% filter(date >= "2021-02-27" & date <= "2021-11-01") %>%
+ggplot () +
+ aes(x = date, y = nb_flowers_inspected, fill = plant_species) +
+ geom_smooth(se = F, colour= "black", n = 250, linewidth = 0.5) + scale_x_break(c("2021-06-20", "2021-09-20")) + theme(axis.text.x = element_text(face = "bold", size = 7L)) + scale_x_date(date_labels = "%B", limits= as.Date(c("2021-02-27", "2021-11-01"))) +  labs(x = "Season", y = "Number of flowers inspected") + facet_wrap(vars(plant_species),scales = "free_y" ,nrow = 3L) + theme_light()
+```
+
+*Sampling efforts on the data subset where flowers inspected were counted*
+```{r warning=FALSE}
+data.inspect.mtp %>% group_by(plant_species) %>% summarise(nb_insp=sum(nb_flowers_inspected))
+```
+
+*List of stations, plant species assemblages and GPS coordinates*
+```{r}
+list.stationsbis <- data.poll.mtp %>% distinct(locality_code, plant_species) %>% count(locality_code) %>%
+  mutate(pop_type = if_else(n==1, "pure", "mixte"))
+list.stationsbis
+
+list.stationsbis %>%
+  count(pop_type)
+
+stationsGIS2 <- data.inspect.mtp %>% select(locality_code, latitude, longitude) %>% distinct(locality_code, .keep_all=T)
+```
+
+*Mantel test*
+```{r}
+list.stations2<-stationsGIS2
+list.stations2<-tibble(list.stations2)
+list.stations2<- list.stations2  %>% relocate(latitude, .after = longitude)
+
+library(sp)
+library(dplyr)
+library(vegan)
+library(geosphere)
+```
+
+*Aristolochia rotunda*
+```{r}
+data.poll.flower.rotunda <- filter(data.poll.mtp,plant_species %in% c("Aristolochia rotunda")) %>% 
+  filter(flower_code != "") %>%
+  select(flower_code, species, nb_individuals) %>% arrange(flower_code) %>%
+  pivot_wider(names_from = species, values_from = nb_individuals, values_fill = 0, values_fn = sum) %>% 
+  left_join(select(data.poll.mtp,locality_code, latitude, longitude, flower_code), by="flower_code") %>% #
+  distinct(flower_code, .keep_all = TRUE)
+
+data.poll.flower.rotunda<-droplevels(data.poll.flower.rotunda)
+
+#geographic data frame - haversine distance
+geo_rotunda2 = data.frame(data.poll.flower.rotunda$longitude, data.poll.flower.rotunda$latitude)
+
+geo_rotunda2$data.poll.flower.rotunda.longitude<-as.numeric(geo_rotunda2$data.poll.flower.rotunda.longitude)
+geo_rotunda2$data.poll.flower.rotunda.latitude<-as.numeric(geo_rotunda2$data.poll.flower.rotunda.latitude)
+
+d.geo.rotunda2 = distm(geo_rotunda2, fun = distHaversine)
+dist.geo.rotunda2 = as.dist(d.geo.rotunda2)
+
+#abundance data frame - bray curtis dissimilarity
+dist.abund.rotunda2 = vegdist(data.poll.flower.rotunda[,2:14], method = "bray")
+
+#abundance vs geographic 
+abund.geo.rotunda2  = mantel(dist.abund.rotunda2, dist.geo.rotunda2, method = "spearman", permutations = 9999, na.rm = TRUE)
+abund.geo.rotunda2
+```
+
+
+*Aristolochia pistolochia*
+```{r}
+data.poll.flower.pistolochia <- filter(data.poll.mtp,plant_species %in% c("Aristolochia pistolochia")) %>% 
+  filter(flower_code != "") %>%
+  select(flower_code, species, nb_individuals) %>% arrange(flower_code) %>%
+  pivot_wider(names_from = species, values_from = nb_individuals, values_fill = 0, values_fn = sum) %>% 
+  left_join(select(data.poll.mtp,locality_code, latitude, longitude, flower_code), by="flower_code") %>% #
+  distinct(flower_code, .keep_all = TRUE)
+
+#geographic data frame - haversine distance
+geo_pistolochia2 = data.frame(data.poll.flower.pistolochia$longitude, data.poll.flower.pistolochia$latitude)
+
+geo_pistolochia2$data.poll.flower.pistolochia.longitude<-as.numeric(geo_pistolochia2$data.poll.flower.pistolochia.longitude)
+geo_pistolochia2$data.poll.flower.pistolochia.latitude<-as.numeric(geo_pistolochia2$data.poll.flower.pistolochia.latitude)
+
+d.geo.pistolochia2 = distm(geo_pistolochia2, fun = distHaversine)
+dist.geo.pistolochia2 = as.dist(d.geo.pistolochia2)
+
+#abundance data frame - bray curtis dissimilarity
+dist.abund.pistolochia2 = vegdist(data.poll.flower.pistolochia[,2:7], method = "bray")
+
+#abundance vs geographic 
+abund.geo.pistolochia2  = mantel(dist.abund.pistolochia2, dist.geo.pistolochia2, method = "spearman", permutations = 9999, na.rm = TRUE)
+abund.geo.pistolochia2
+```
+
+*Aristolochia clematitis*
+```{r}
+data.poll.flower.clematitis <- filter(data.poll.mtp,plant_species %in% c("Aristolochia clematitis")) %>% filter(flower_code != "") %>%
+  select(flower_code, species, nb_individuals) %>% arrange(flower_code) %>%
+  pivot_wider(names_from = species, values_from = nb_individuals, values_fill = 0, values_fn = sum) %>% 
+  left_join(select(data.poll.mtp,locality_code, latitude, longitude, flower_code), by="flower_code") %>% #
+  distinct(flower_code, .keep_all = TRUE)
+
+#geographic data frame - haversine distance
+geo_clematitis2 = data.frame(data.poll.flower.clematitis$longitude, data.poll.flower.clematitis$latitude)
+d.geo.clematitis2 = distm(geo_clematitis2, fun = distHaversine)
+dist.geo.clematitis2 = as.dist(d.geo.clematitis2)
+
+#abundance data frame - bray curtis dissimilarity
+dist.abund.clematitis2 = vegdist(data.poll.flower.clematitis[,2:11], method = "bray")
+
+#abundance vs geographic 
+abund.geo.clematitis2  = mantel(dist.abund.clematitis2, dist.geo.clematitis2, method = "spearman", permutations = 9999, na.rm = TRUE)
+abund.geo.clematitis2
+```
+
+
+********************************************************************************
+*Comparisons of floral visitors in synchronopatry*
+********************************************************************************
+
+**Data set for occupied flowers by each pollinator species**
+
+```{r}
+library(dplyr)
+data.poll.mtp.1<-data.poll.mtp
+data.poll.mtp.1$nb_individuals<-1 #The number of flowers occupied by each pollinator species, so the abundance of pollinators is no longer relevant
+data.poll.mtp.1 <- aggregate(x = data.poll.mtp.1$nb_individuals, by = list(data.poll.mtp.1$date,data.poll.mtp.1$species,data.poll.mtp.1$locality_code, data.poll.mtp.1$flower_code,data.poll.mtp.1$plant_species), FUN=min)
+colnames(data.poll.mtp.1)<-c("date","species","locality_code","flower_code","plant_species","nb_individuals") 
+
+data.fleur.station.date <- filter(data.poll.mtp.1, species %in% list.poll) %>%
+  group_by(date,locality_code, plant_species, species) %>% summarise(n=sum(nb_individuals)) %>% ungroup() %>%
+  pivot_wider(names_from = species, values_from = n, values_fill = 0, values_fn = sum) %>%
+  left_join(select(data.poll.mtp, date, locality_code,plant_species), by=c("date", "locality_code", "plant_species")) %>% distinct(date, locality_code, plant_species, .keep_all = TRUE) 
+```
+
+**Flowers occupied**
+```{r}
+syntopicf<-select(data.inspect.mtpM, date, locality_code,plant_species, nb_flowers_inspected)
+syntopiccf<-full_join(syntopicf, data.fleur.station.date, by = c("date","locality_code","plant_species"))
+syntopiccf[,(4:19)][is.na(syntopiccf[,(4:19)])]<-0
+```
+
+*A.rotunda & A. clematitis*
+```{r}
+#Filter the synchronopatric stations
+SyntopicCleRot2<-filter(syntopiccf, locality_code %in% c("ES1","ME1","MA1","SA1","VA1"), nb_flowers_inspected >0)
+
+#Sort rows where data on both species on the same day on the same site
+SyntopicCleRot2<-slice(SyntopicCleRot2, -c(38,39)) # remove sampling sessions with only one species sampled
+SyntopicCleRot2$date<-as.character(SyntopicCleRot2$date)
+
+SyntopicCleRot2f<-unite(SyntopicCleRot2,date,locality_code,sep="_",remove=TRUE)
+```
+
+*A.rotunda & A.pistolochia*
+```{r}
+#Filter the synchronopatric stations
+SyntopicRotPis2<-filter(syntopiccf, locality_code %in% c("BR2","BR1","LAM1","MU2","PO1","SG10","SG11","SG9","VF2"), nb_flowers_inspected >0)
+
+#Sort rows where data on both species on the same day on the same site
+SyntopicRotPis2<-slice(SyntopicRotPis2, -c(48,23,24,21,4,42,25))
+SyntopicRotPis2$date<-as.character(SyntopicRotPis2$date)
+SyntopicRotPis2f<-unite(SyntopicRotPis2,date,locality_code,sep="_",remove=TRUE)
+```
+
+**Number of flowers occupied by each fly species for each plant species in synchronopatry**
+
+*A.rotunda & A.pistolochia*
+```{r}
+tapply(SyntopicRotPis2f$`Forcipomyia aristolochiae`,SyntopicRotPis2f$plant_species,sum)
+tapply(SyntopicRotPis2f$`Forcipomyia monilicornis`,SyntopicRotPis2f$plant_species,sum)
+tapply(SyntopicRotPis2f$`Trachysiphonella ruficeps`,SyntopicRotPis2f$plant_species,sum)
+tapply(SyntopicRotPis2f$`Tricimba cincta`,SyntopicRotPis2f$plant_species,sum)
+```
+
+#Count for each pollinator species manually
+
+>Example
+
+```{r}
+# Creation of vectors corresponding to the two categories (empty flowers/occupied flowers)
+Arotsp = c(2932,174) #Arotunda
+Apissp = c(3862,31) #Apistolochia
+
+#Chisquare test
+tablefa = matrix(c(Arotsp,Apissp),2,2,byrow=T)
+khi_test = chisq.test(tablefa)
+khi_test
+```
+
+*A.rotunda & A.clematitis*
+```{r}
+SyntopicCleRot2fbis<-SyntopicCleRot2f[,-(4:9)]
+
+#Dasyhelea punctiventris
+tapply(SyntopicCleRot2f$`Dasyhelea punctiventris`,SyntopicCleRot2f$plant_species,sum)
+#Dasyhelea turficola
+tapply(SyntopicCleRot2f$`Dasyhelea turficola`,SyntopicCleRot2f$plant_species,sum)
+```
+
+```{r}
+#Forcipomyia alacris
+tapply(SyntopicCleRot2f$`Forcipomyia alacris`,SyntopicCleRot2f$plant_species,sum)
+#Forcipomyia aristolochiae
+tapply(SyntopicCleRot2f$`Forcipomyia aristolochiae`,SyntopicCleRot2f$plant_species,sum)
+#Forcipomyia knockensis
+tapply(SyntopicCleRot2f$`Forcipomyia knockensis`,SyntopicCleRot2f$plant_speciesp,sum)
+#Forcipomyia psilonota
+tapply(SyntopicCleRot2f$`Forcipomyia psilonota`,SyntopicCleRot2f$plant_species,sum)
+#Forcipomyia spCerato10
+tapply(SyntopicCleRot2f$`Forcipomyia spCerato10`,SyntopicCleRot2f$plant_species,sum)
+#Trachysiphonella ruficeps
+tapply(SyntopicCleRot2f$`Trachysiphonella ruficeps`,SyntopicCleRot2f$plant_species,sum)
+
+#Hapleginella laevifrons
+tapply(SyntopicCleRot2f$`Hapleginella laevifrons`,SyntopicCleRot2f$plant_species,sum)
+#Tricimba cincta
+tapply(SyntopicCleRot2f$`Tricimba cincta`,SyntopicCleRot2f$plant_species,sum)
+#Tricimba humeralis
+tapply(SyntopicCleRot2f$`Tricimba humeralis`,SyntopicCleRot2f$plant_species,sum)
+#Conioscinella cf mimula
+tapply(SyntopicCleRot2f$`Conioscinella cf mimula`,SyntopicCleRot2f$plant_species,sum)
+```
+
+#Count for each pollinator species manually
+
+>Example
+
+```{r}
+# Creation of vectors corresponding to the two categories (empty flowers/occupied flowers)
+Arotsp2 = c(1133,0) #Arotunda
+Aclemsp2 = c(1825,7) #Aclematitis
+
+#Chisquare test
+table2 = matrix(c(Arotsp2,Aclemsp2),2,2,byrow=T)
+khi_test = chisq.test(table2)
+khi_test
+```

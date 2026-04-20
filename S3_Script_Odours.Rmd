@@ -1,0 +1,203 @@
+---
+title: "S3_Script_Odours"
+output: html_document
+date: "2025-02-07"
+---
+
+###########################################
+
+**Floral VOCs** 
+
+###########################################
+
+```{r setup, include=FALSE}
+library("ChemmineR")
+library("fmcsR")
+vapply(c("stringr","mgcv", "RColorBrewer", "dplyr","ggplot2","tidyverse", "lme4","vegan","emmeans","compositions"), library, logical(1L),
+       character.only = TRUE, logical.return = TRUE)
+citation(package = "chemodiv")
+```
+
+*Important: before importing the csv file, you must have the dataset in the form of a matrix with individuals in rows and compounds in columns*
+
+#Import datafile
+```{r}
+dataset<-read.csv("D5_Data_floral_odours.csv",header = T,sep = ";", dec=".")
+
+datasetb<-dataset[,-1]
+row.names(datasetb)<-dataset[,1]
+```
+
+#Convert data into proportions
+```{r}
+datasetc<-datasetb
+datasetc$sum<-rowSums(datasetc)
+
+datasetc[,1:90]<-(datasetc[,1:90]/datasetc$sum)*100
+datasetc<-datasetc[,-90]
+```
+
+#Values below 0.1% are not taking into account (Tr)
+```{r}
+datasetc[datasetc < 0.1] <- 0
+```
+
+```{r}
+species<-c(rep("Aristolochia pistolochia",16), rep("Aristolochia rotunda",7))
+datasetc$species<-species
+```
+
+#CLR transformation of data, adding 0.1 to all values 
+```{r}
+clr_function <- function(x) {
+  return(log1p(x = x / (exp(x = sum(log1p(x = x[x > 0]), na.rm = TRUE) / length(x = x)))))
+}
+
+min(datasetc[,1:89][datasetc[,1:89] != 0])
+Chemistry.compositional <- clr_function(datasetc[,1:89] + 0.1)
+```
+
+#PCOA
+```{r}
+library(ape)
+# PCoA
+matrixbray<-vegdist(Chemistry.compositional, method="aitchison")
+pcoa<-cmdscale(matrixbray, eig = TRUE)
+
+speciescol<-c(rep("#FF5722",16), rep("#C0CA33",7))
+ordiplot(pcoa,type="points")
+points (pcoa$points,col = speciescol, pch=c(18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,17,17,17,17,17,17,17), cex=1.5)
+title("PCoA_Aristolochia")
+
+barplot(pcoa$eig,col="black", ylab = 'eigenvalues')
+(pcoa$eig[1]/sum(pcoa$eig))*100
+(pcoa$eig[2]/sum(pcoa$eig))*100
+```
+
+*PLS-DA on compositional data*
+```{r}
+library(Hotelling)
+library(ade4)
+library(vegan)
+library(pls)
+library(RVAideMemoire)
+```
+
+#We fit the PLS-DA model:
+```{r}
+PPLSDA_dummy2 <- dummy(datasetc$species)
+
+rowSums(datasetc[1:23,1:89])
+colSums(datasetc[1:23,1:89])
+
+library(compositions)
+données3bis<- clr_function(datasetc[1:23,1:89]+ 0.1)
+Chemistry3bis<-as.matrix(données3bis[,1:89])
+
+PPLSDAbis <- cppls(PPLSDA_dummy2~Chemistry3bis)
+```
+
+```{r}
+#PPLSDA
+MVA.cmv(Chemistry3bis,factor(datasetc$species[1:23]),model="PPLS-DA",
+crit.inn="NMC",ncomp=2)
+
+MVA.test(Chemistry3bis,factor(datasetc$species[1:23]),model="PPLS-DA",
+cmv=TRUE,ncomp=2)
+```
+
+```{r}
+MVA.synt(PPLSDAbis)
+MVA.plot(PPLSDAbis,xax=1, yax=2, fac=datasetc$species[1:23],drawextaxes=FALSE,pch=c(15,17), cex= 1.5, col=c("#FF5722","#C0CA33"), main="PPLS-DA")
+```
+
+*PERMANOVA*
+```{r}
+library(vegan)
+library(RVAideMemoire)
+ado<-adonis2(as.matrix(Chemistry.compositional) ~ datasetc$species, permutations = 999, method = "aitchison" , by = "onedf")
+ado
+
+pairwise.perm.manova(vegdist(as.matrix(Chemistry.compositional),"aitchison"),datasetc$species,p.method = "fdr")
+```
+
+###########################################
+
+**Behavioural attraction** 
+
+###########################################
+
+#Import data
+```{r}
+behaviour<-read.csv("D6_McPhail_traps_odourattractant.csv",header = T, row.names = NULL,sep = ";")
+```
+
+#Visualize data
+```{r}
+behaviour2<-behaviour
+length(unique(behaviour2$trap))
+
+za<-tapply(behaviour2$trap, behaviour2$odour, n_distinct)
+za
+
+z<-data_frame(tapply(behaviour2$specimen_sample, behaviour2$odour, n_distinct))
+x<-sort(behaviour2$odour)
+rownames(z)<-unique(x)
+z<-rename(z, "Traps" = `tapply(behaviour2$specimen_sample, behaviour2$odour, n_distinct)`)
+```
+
+```{r}
+library(ggplot2)
+
+ggplot(behaviour2) +
+ aes(x = odour, y = number, fill = family) +
+ geom_col() +
+ scale_fill_viridis_d(option = "viridis", 
+ direction = 1) +
+ coord_flip() +
+ theme_gray() +
+ theme(axis.text.y = element_text(face = "bold", size = 15L), 
+ axis.text.x = element_text(face = "bold", size = 15L))
+```
+
+```{r}
+ggplot(behaviour2) +
+ aes(x = odour, y = nb, fill = espece) +
+ geom_col() +
+ scale_fill_viridis_d(option = "viridis", 
+ direction = 1) +
+ coord_flip() +
+ theme_gray() +
+ theme(axis.text.y = element_text(face = "bold", size = 15L), 
+ axis.text.x = element_text(face = "bold", size = 15L))
+
+ggplot(behaviour2) +
+ aes(x = odour, y = nb, fill = sexe) +
+ geom_col() +
+ scale_fill_viridis_d(option = "viridis", 
+ direction = 1) +
+ coord_flip() +
+ theme_gray() +
+ theme(axis.text.y = element_text(face = "bold", size = 15L), 
+ axis.text.x = element_text(face = "bold", size = 15L))
+```
+
+#Total number of flies attracted and by family
+```{r}
+sum(behaviour2$number)
+tapply(behaviour2$number, behaviour2$family, sum)
+```
+
+#F. monilicornis
+```{r}
+forcip<-subset(behaviour2, behaviour2$species=="Forcipomyia monilicornis")
+sum(forcip$number)
+length(unique(forcip$trap))
+forcip
+
+
+chloro<-subset(behaviour2, behaviour2$family=="Chloropidae")
+sum(chloro$number)
+length(unique(chloro$trap))
+chloro 
+```
